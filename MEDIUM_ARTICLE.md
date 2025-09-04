@@ -6,11 +6,11 @@
 
 ## The Spark of an Idea
 
-It was during a particularly busy Ramadan when the idea hit me. As a Muslim developer, I found myself constantly checking my phone for prayer times, Hijri dates, and Islamic events. Between work meetings, family time, and the hustle of daily life, I sometimes missed prayer notifications buried in a sea of other alerts.
+It was during a particularly busy Ramadan when the idea hit me. As a Muslim developer, I found myself constantly checking my phone for prayer times, Hijri dates, and Islamic events. Between work meetings, family time, and the hustle of daily life, I sometimes missed prayer notifications buried in a sea of other alerts more over I wanted to encourage my son to develop a habit of doing his prayers on time.
 
-"What if," I thought, "there was a dedicated device that did nothing but help me stay connected to my Islamic obligations?"
+"What if," I thought, "there was a dedicated device that did nothing but help me stay connected to my prayer times?"
 
-That simple question sparked a six-week journey that would take me deep into hardware programming, Islamic astronomical calculations, and user interface design. This is the story of how **Muslim Companion** came to life.
+That simple question sparked a 2 days journey with AI Help ofcoursethat would take me deep into hardware programming, Islamic astronomical calculations, and user interface design. This is the story of how Muslim Companion came to life.
 
 ## Chapter 1: The Vision Takes Shape
 

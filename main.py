@@ -31,13 +31,13 @@ class MuslimCompanion:
         self.buttons = self.hw.buttons
         
         # Get display dimensions
-        display_width, display_height = self.hw.get_display_size()
+        self.display_width, self.display_height = self.hw.get_display_size()
         
         # Initialize configuration
         self.config = Config()
         
         # Initialize UI manager
-        self.ui = UIManager(self.display, self.touch, display_width, display_height)
+        self.ui = UIManager(self.display, self.touch, self.display_width, self.display_height)
         
         # Initialize prayer times calculator
         self.prayer_calc = PrayerTimes(
@@ -302,12 +302,14 @@ class MuslimCompanion:
         prayer_name = self.prayer_calc.check_prayer_time_alert(hour, minute)
         if prayer_name:
             print(f"Prayer Alert: It's time for {prayer_name} prayer!")
-            # Flash the screen to indicate prayer time
-            self.display.fill_rect(0, 0, self.hw.DISPLAY_WIDTH, 60, 0x07E0)  # GREEN
+            # Flash the screen to indicate prayer time (works on any tab)
+            self.display.fill_rect(0, 0, self.display_width, 60, 0x07E0)  # GREEN
             self.ui.draw_text_centered(f"{prayer_name} Prayer Time!", 20, 3, 0x0000)  # BLACK
             # Play the alert sound
             self.play_prayer_alert()
-            # Refresh display after alert
+            # Wait a moment to show the alert
+            time.sleep(2)
+            # Refresh display after alert to restore current tab
             self.update_display()
         
     def run(self):
