@@ -54,16 +54,16 @@
 ## 📱 Screenshots
 
 ### Main Prayer Times Screen
-*[Screenshot placeholder - Prayer times display with current time and next prayer]*
+![Prayer Times Display](prtsc/PICO_MUSLIM_PRAYERS_1.jpg)
+*Prayer times display with current time and next prayer countdown*
 
-### Hijri Events Calendar
-*[Screenshot placeholder - Islamic calendar with current Hijri date and upcoming events]*
-
-### Settings Menu
-*[Screenshot placeholder - Configuration screen with navigation options]*
+### Hijri Events Calendar & Settings
+![Hijri Calendar and Settings](prtsc/PICO_MUSLIM_PRAYERS_2.jpg)
+*Islamic calendar with current Hijri date and configuration screens*
 
 ### Mobile-Style Navigation
-*[Screenshot placeholder - Bottom navigation tabs in action]*
+![Bottom Navigation](prtsc/PICO_MUSLIM_PRAYERS_3.jpg)
+*Mobile-style bottom navigation tabs with touch and joystick controls*
 
 ## 🗂 Project Structure
 
