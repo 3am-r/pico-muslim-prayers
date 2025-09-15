@@ -12,8 +12,10 @@ from time import sleep_ms
 # Import from lib folder - boot.py handles path setup
 from lib.prayer_times import PrayerTimes
 from lib.prayer_settings import PrayerSettings
+from lib.simple_settings import SimpleSettings  # Simplified settings for testing
 from lib.hijri_calendar import HijriCalendar
 from lib.ui_manager import UIManager
+from lib.wifi_time_sync import WiFiTimeSync
 from hardware_config import get_hardware  # Hardware abstraction
 from prayer_config import Config
 
@@ -36,6 +38,13 @@ class MuslimCompanion:
         # Initialize configuration
         self.config = Config()
         
+        # Load WiFi configuration if available
+        try:
+            from wifi_config import configure_wifi
+            configure_wifi(self.config)
+        except ImportError:
+            print("wifi_config.py not found - WiFi features will need manual setup")
+        
         # Initialize UI manager
         self.ui = UIManager(self.display, self.touch, self.display_width, self.display_height)
         
@@ -43,21 +52,34 @@ class MuslimCompanion:
         self.prayer_calc = PrayerTimes(
             latitude=self.config.get('latitude', 27.9506),  # Default: Tampa
             longitude=self.config.get('longitude', -82.4572),
-            timezone=self.config.get('timezone', -4),
-            calculation_method=self.config.get('method', 'ISNA')
+            timezone=self.config.get('timezone', -5),  # Base timezone without DST
+            calculation_method=self.config.get('method', 'ISNA'),
+            config=self.config  # Pass config for DST handling
         )
         
-        # Initialize settings manager
-        self.settings_manager = PrayerSettings(self.ui, self.hw, self.config)
+        # Initialize settings manager based on touch availability
+        if self.touch is None:
+            # Use no-touch settings if touch screen failed
+            from lib.no_touch_settings import NoTouchSettings
+            self.settings_manager = NoTouchSettings(self.ui, self.hw, self.config)
+            print("Using No-Touch Settings (touch screen disabled)")
+        else:
+            # Use simplified settings for debugging
+            self.settings_manager = SimpleSettings(self.ui, self.hw, self.config)
+            # Original settings manager (uncomment to use)
+            # self.settings_manager = PrayerSettings(self.ui, self.hw, self.config)
         
         # Initialize Hijri calendar
         self.hijri_calendar = HijriCalendar()
+        
+        # Initialize WiFi time sync
+        self.wifi_sync = WiFiTimeSync(self.config)
         
         # RTC for time keeping
         self.rtc = RTC()
         
         # Current tab/screen
-        self.current_tab = 'prayer'  # 'prayer', 'hijri', 'settings'
+        self.current_tab = 'prayer'  # 'prayer', 'hijri', 'qibla', 'settings'
         
         # Settings state (for non-blocking settings)
         self.settings_state = {
@@ -65,6 +87,19 @@ class MuslimCompanion:
             'selected_index': 0,
             'items': []
         }
+        
+        # Touch debouncing
+        self.last_touch_time = 0
+        self.touch_debounce_ms = 200  # 200ms debounce
+        
+        # Performance tracking
+        self.last_display_update = 0
+        self.display_update_interval = 100  # Minimum ms between display updates
+        
+        # Sleep mode state
+        self.is_sleeping = False
+        self.last_activity_time = time.ticks_ms()
+        self.sleep_start_time = 0
     
     def format_time(self, time_str, include_seconds=True):
         """Format time string according to user preference (12h/24h)"""
@@ -112,10 +147,17 @@ class MuslimCompanion:
         """Process all input: touch, buttons, and joystick"""
         # Update button states
         self.buttons.update()
+        # Small delay to help with button detection
+        time.sleep(0.01)
         
-        # Check legacy settings button
+        # Check if any input should wake from sleep
+        input_detected = False
+        
+        # Check legacy settings button (GP12)
         if self.hw.check_legacy_button():
-            result = self.settings_manager.show_settings_with_navigation()
+            input_detected = True
+            print("Legacy button (GP12) pressed - Opening settings")
+            result = self.show_settings()
             if result == True:
                 self.update_display()
             elif isinstance(result, str):
@@ -125,13 +167,14 @@ class MuslimCompanion:
         # Check joystick for tab navigation (works on all tabs)
         direction = self.joystick.wait_for_direction(timeout_ms=50)  # Short timeout for responsiveness
         if direction:
+            input_detected = True
             if direction == 'left':
                 # Switch to previous tab
-                tabs = ['prayer', 'hijri', 'settings']
+                tabs = ['prayer', 'hijri', 'qibla', 'settings']
                 current_index = tabs.index(self.current_tab) if self.current_tab in tabs else 0
                 new_index = (current_index - 1) % len(tabs)
                 if tabs[new_index] == 'settings':
-                    result = self.settings_manager.show_settings_with_navigation()
+                    result = self.show_settings()
                     if result == True:
                         self.update_display()
                     elif isinstance(result, str):
@@ -141,11 +184,11 @@ class MuslimCompanion:
                 return
             elif direction == 'right':
                 # Switch to next tab
-                tabs = ['prayer', 'hijri', 'settings']
+                tabs = ['prayer', 'hijri', 'qibla', 'settings']
                 current_index = tabs.index(self.current_tab) if self.current_tab in tabs else 0
                 new_index = (current_index + 1) % len(tabs)
                 if tabs[new_index] == 'settings':
-                    result = self.settings_manager.show_settings_with_navigation()
+                    result = self.show_settings()
                     if result == True:
                         self.update_display()
                     elif isinstance(result, str):
@@ -154,17 +197,30 @@ class MuslimCompanion:
                     self.switch_tab(tabs[new_index])
                 return
         
-        # Check button 1 for settings (works on all tabs)
+        # Check button 1 for sleep/settings depending on tab
         if self.buttons.get_select_press():
-            result = self.settings_manager.show_settings_with_navigation()
-            if result == True:
-                self.update_display()
-            elif isinstance(result, str):
-                self.switch_tab(result)
+            input_detected = True
+            if self.current_tab == 'prayer':
+                # On prayer tab, button 1 = sleep
+                print("Button 1 (GP14) pressed - Toggling sleep mode")
+                if self.is_sleeping:
+                    self.wake_from_sleep()
+                else:
+                    self.enter_sleep_mode()
+            else:
+                # On other tabs, button 1 = settings
+                print("Button 1 (GP14) pressed - Opening settings")
+                result = self.show_settings()
+                print(f"Settings returned: {result}")
+                if result == True:
+                    self.update_display()
+                elif isinstance(result, str):
+                    self.switch_tab(result)
             return
         
         # Check button 2/joystick button for tab-specific actions
         if self.buttons.get_back_press() or self.joystick.get_button_press():
+            input_detected = True
             if self.current_tab == 'prayer':
                 # Refresh prayer times
                 self.update_prayer_times()
@@ -172,51 +228,76 @@ class MuslimCompanion:
             elif self.current_tab == 'hijri':
                 # Refresh Hijri data
                 self.update_display()
+            elif self.current_tab == 'qibla':
+                # Refresh Qibla compass
+                self.update_display()
             return
         
-        # Check touch input
-        touch_data = self.touch.get_touch()
-        if touch_data:
-            x, y = touch_data[0], touch_data[1]
-            action_obj = self.ui.handle_touch(x, y)
-            
-            if action_obj:
-                action = action_obj.get('action') if isinstance(action_obj, dict) else action_obj
+        # Check touch input with debouncing and error handling
+        current_time = time.ticks_ms()
+        if self.touch and time.ticks_diff(current_time, self.last_touch_time) > self.touch_debounce_ms:
+            try:
+                touch_data = self.touch.get_touch()
+            except OSError as e:
+                if e.errno == 5:  # I2C error
+                    touch_data = None  # Ignore I2C errors
+                else:
+                    raise
+            except:
+                touch_data = None  # Ignore other touch errors
                 
-                if action and action.startswith('tab_'):
-                    # Tab switching
-                    tab_name = action[4:]  # Remove 'tab_' prefix
-                    print(f"Main app tab switch request: {tab_name}")  # Debug print
-                    if tab_name == 'settings':
-                        # Handle settings specially
-                        result = self.settings_manager.show_settings_with_navigation()
-                        print(f"Settings returned: {result}")  # Debug print
+            if touch_data:
+                input_detected = True
+                x, y = touch_data[0], touch_data[1]
+                self.last_touch_time = current_time  # Update debounce time
+                action_obj = self.ui.handle_touch(x, y)
+                
+                if action_obj:
+                    action = action_obj.get('action') if isinstance(action_obj, dict) else action_obj
+                    
+                    if action and action.startswith('tab_'):
+                        # Tab switching
+                        tab_name = action[4:]  # Remove 'tab_' prefix
+                        print(f"Main app tab switch request: {tab_name}")  # Debug print
+                        if tab_name == 'settings':
+                            # Handle settings specially
+                            result = self.show_settings()
+                            print(f"Settings returned: {result}")  # Debug print
+                            if result == True:
+                                self.update_display()
+                            elif isinstance(result, str):
+                                # Switch to requested tab
+                                print(f"Switching to tab: {result}")  # Debug print
+                                self.switch_tab(result)
+                        else:
+                            self.switch_tab(tab_name)
+                    elif action == 'settings':  # Legacy settings button
+                        result = self.show_settings()
                         if result == True:
                             self.update_display()
                         elif isinstance(result, str):
                             # Switch to requested tab
-                            print(f"Switching to tab: {result}")  # Debug print
                             self.switch_tab(result)
-                    else:
-                        self.switch_tab(tab_name)
-                elif action == 'settings':  # Legacy settings button
-                    result = self.settings_manager.show_settings_with_navigation()
-                    if result == True:
-                        self.update_display()
-                    elif isinstance(result, str):
-                        # Switch to requested tab
-                        self.switch_tab(result)
-                elif action == 'refresh':
-                    if self.current_tab == 'prayer':
-                        self.update_prayer_times()
-                        self.update_display()
-                    elif self.current_tab == 'hijri':
-                        self.update_display()
+                    elif action == 'refresh':
+                        if self.current_tab == 'prayer':
+                            self.update_prayer_times()
+                            self.update_display()
+                        elif self.current_tab == 'hijri':
+                            self.update_display()
+                        elif self.current_tab == 'qibla':
+                            self.update_display()
         
+        # Update activity time if any input was detected
+        if input_detected:
+            self.update_activity_time()
                 
         
     def update_display(self):
         """Update the main display (full redraw)"""
+        # Don't update display if sleeping (except when waking up)
+        if self.is_sleeping:
+            return
+            
         _, _, _, _, hour, minute, second, _ = self.rtc.datetime()
         current_time = f"{hour:02d}:{minute:02d}:{second:02d}"
         formatted_current_time = self.format_time(current_time, include_seconds=True)
@@ -241,12 +322,14 @@ class MuslimCompanion:
             )
         elif self.current_tab == 'hijri':
             self.draw_hijri_tab()
+        elif self.current_tab == 'qibla':
+            self.draw_qibla_tab()
         elif self.current_tab == 'settings':
             # Settings tab is handled by the settings manager in its blocking loop
             # This only runs when first switching to settings
             if not hasattr(self, '_in_settings') or not self._in_settings:
                 self._in_settings = True
-                result = self.settings_manager.show_settings_with_navigation()
+                result = self.show_settings()
                 self._in_settings = False
                 print(f"Settings tab returned: {result}")  # Debug print
                 if result == True:
@@ -258,6 +341,10 @@ class MuslimCompanion:
     
     def update_time_only(self):
         """Update only the time display without redrawing entire screen"""
+        # Don't update display if sleeping
+        if self.is_sleeping:
+            return
+            
         _, _, _, _, hour, minute, second, _ = self.rtc.datetime()
         current_time = f"{hour:02d}:{minute:02d}:{second:02d}"
         formatted_current_time = self.format_time(current_time, include_seconds=True)
@@ -272,6 +359,44 @@ class MuslimCompanion:
         next_event, days_until = self.hijri_calendar.get_next_islamic_event()
         
         self.ui.draw_hijri_screen(hijri_date, next_event, days_until, self.current_tab)
+    
+    def draw_qibla_tab(self):
+        """Draw the Qibla compass tab"""
+        qibla_direction = self.calculate_qibla_direction()
+        location_name = self.config.get('location_name', 'Tampa')
+        
+        self.ui.draw_qibla_screen(qibla_direction, location_name, self.current_tab)
+    
+    def calculate_qibla_direction(self):
+        """Calculate Qibla direction from current location to Mecca"""
+        import math
+        
+        # Current location coordinates
+        lat1 = math.radians(self.config.get('latitude', 27.9506))  # Tampa default
+        lon1 = math.radians(self.config.get('longitude', -82.4572))
+        
+        # Mecca coordinates (Kaaba)
+        lat2 = math.radians(21.4225)  # Mecca latitude
+        lon2 = math.radians(39.8262)  # Mecca longitude
+        
+        # Calculate bearing from current location to Mecca
+        dlon = lon2 - lon1
+        
+        y = math.sin(dlon) * math.cos(lat2)
+        x = math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(lat2) * math.cos(dlon)
+        
+        bearing = math.atan2(y, x)
+        bearing = math.degrees(bearing)
+        bearing = (bearing + 360) % 360  # Normalize to 0-360 degrees
+        
+        return bearing
+    
+    def show_settings(self):
+        """Show settings using appropriate method"""
+        if hasattr(self.settings_manager, 'show_settings_menu'):
+            return self.settings_manager.show_settings_menu()
+        else:
+            return self.show_settings()
     
     def switch_tab(self, tab_name):
         """Switch to a different tab"""
@@ -290,6 +415,46 @@ class MuslimCompanion:
             self.config.get('buzzer_duration', 5)
         )
     
+    def enter_sleep_mode(self):
+        """Enter sleep mode - turn off display"""
+        if not self.is_sleeping:
+            print("Entering sleep mode")
+            self.is_sleeping = True
+            self.sleep_start_time = time.ticks_ms()
+            # Turn off display by clearing it and turning off backlight if possible
+            self.display.clear(0x0000)  # Black screen
+            # Note: Actual backlight control would need hardware-specific implementation
+    
+    def wake_from_sleep(self):
+        """Wake from sleep mode - turn on display"""
+        if self.is_sleeping:
+            print("Waking from sleep mode")
+            self.is_sleeping = False
+            self.last_activity_time = time.ticks_ms()
+            # Refresh the display
+            self.update_display()
+    
+    def update_activity_time(self):
+        """Update last activity time (for sleep timeout)"""
+        self.last_activity_time = time.ticks_ms()
+        # Wake up if we're sleeping and there's activity
+        if self.is_sleeping:
+            self.wake_from_sleep()
+    
+    def check_sleep_timeout(self):
+        """Check if we should enter sleep mode due to inactivity"""
+        if not self.config.get('sleep_mode_enabled', False):
+            return
+            
+        if self.is_sleeping:
+            return  # Already sleeping
+            
+        timeout_ms = self.config.get('sleep_timeout', 30) * 1000
+        current_time = time.ticks_ms()
+        
+        if time.ticks_diff(current_time, self.last_activity_time) > timeout_ms:
+            self.enter_sleep_mode()
+    
     def check_prayer_time_alert(self, hour, minute, last_check):
         """Check if current time matches any prayer time and trigger alert"""
         current_time = f"{hour:02d}:{minute:02d}"
@@ -302,6 +467,11 @@ class MuslimCompanion:
         prayer_name = self.prayer_calc.check_prayer_time_alert(hour, minute)
         if prayer_name:
             print(f"Prayer Alert: It's time for {prayer_name} prayer!")
+            
+            # Wake from sleep if sleeping (prayer alerts work even when sleeping)
+            if self.is_sleeping:
+                self.wake_from_sleep()
+            
             # Flash the screen to indicate prayer time (works on any tab)
             self.display.fill_rect(0, 0, self.display_width, 60, 0x07E0)  # GREEN
             self.ui.draw_text_centered(f"{prayer_name} Prayer Time!", 20, 3, 0x0000)  # BLACK
@@ -311,6 +481,8 @@ class MuslimCompanion:
             time.sleep(2)
             # Refresh display after alert to restore current tab
             self.update_display()
+            # Reset activity time to prevent immediate sleep after prayer alert
+            self.update_activity_time()
         
     def run(self):
         """Main application loop"""
@@ -323,6 +495,17 @@ class MuslimCompanion:
         self.play_boot_sound()
         
         time.sleep(2)
+        
+        # Auto sync time on startup if enabled
+        if self.config.get('ntp_on_startup', True) and self.config.get('wifi_ssid'):
+            print("Attempting automatic time sync...")
+            try:
+                if self.wifi_sync.auto_sync_time():
+                    print("Startup time sync successful")
+                else:
+                    print("Startup time sync failed")
+            except Exception as e:
+                print(f"Startup time sync error: {e}")
         
         self.update_prayer_times()
         
@@ -353,6 +536,9 @@ class MuslimCompanion:
                 # Check for all input (touch, buttons, joystick)
                 self.handle_input()
                 
+                # Check sleep timeout
+                self.check_sleep_timeout()
+                
                 # Check if it's prayer time (check once per minute)
                 if minute != last_minute:
                     current_time_str = f"{hour:02d}:{minute:02d}"
@@ -364,7 +550,16 @@ class MuslimCompanion:
                     self.update_prayer_times()
                     screen_needs_refresh = True
                 
-                time.sleep(0.1)
+                # Check for scheduled time sync (once per hour at minute 0)
+                if minute == 0 and second == 0 and self.config.get('ntp_enabled', True):
+                    try:
+                        if self.wifi_sync.scheduled_sync():
+                            print("Scheduled time sync completed")
+                            screen_needs_refresh = True
+                    except Exception as e:
+                        print(f"Scheduled sync error: {e}")
+                
+                time.sleep(0.05)  # Reduced for better responsiveness
                 
             except Exception as e:
                 print(f"Error in main loop: {e}")

@@ -17,7 +17,8 @@ class Config:
             'location_name': 'Tampa',
             'latitude': 27.9506,
             'longitude': -82.4572,
-            'timezone': -4,  # EDT in summer, -5 EST in winter
+            'timezone': -5,  # EST base timezone (without DST)
+            'daylight_saving': True,  # Enable daylight saving time adjustment
             'method': 'ISNA',
             'asr_madhab': 1,  # 1 = Shafi, 2 = Hanafi
             'buzzer_enabled': True,
@@ -29,7 +30,16 @@ class Config:
             'language': 'en',
             'date_format': 'MM/DD/YYYY',
             'time_format': '12h',  # 12h or 24h
-            'selected_city': 'Tampa'
+            'selected_city': 'Tampa',
+            # WiFi and NTP settings
+            'wifi_ssid': '',  # WiFi network name
+            'wifi_password': '',  # WiFi password
+            'wifi_auto_connect': True,  # Auto connect to WiFi on startup
+            'wifi_auto_disconnect': True,  # Disconnect after sync to save power
+            'ntp_enabled': True,  # Enable automatic time sync
+            'ntp_sync_interval': 86400,  # Sync every 24 hours (seconds)
+            'last_ntp_sync': 0,  # Last successful NTP sync timestamp
+            'ntp_on_startup': True  # Sync time on device startup
         }
         
     def load_settings(self):

@@ -43,7 +43,7 @@ class GeeekPiHardware:
     # ADC pins on Pi Pico 2 W: GP26 (ADC0), GP27 (ADC1), GP28 (ADC2)
     JOYSTICK_X = 27   # GP27 (ADC1) - X axis
     JOYSTICK_Y = 26   # GP26 (ADC0) - Y axis 
-    JOYSTICK_SW = 15  # GP15 (joystick center button - shares with button 2)
+    JOYSTICK_SW = 22  # GP22 (joystick center button - separate from button 2)
     BUTTON_1 = 14     # GP14 (select/OK button)
     BUTTON_2 = 15     # GP15 (back/cancel button)
     
@@ -67,10 +67,15 @@ class GeeekPiHardware:
                               rst=Pin(self.SPI_RST, Pin.OUT),
                               width=self.DISPLAY_WIDTH, height=self.DISPLAY_HEIGHT)
         
-        # Initialize touch screen
-        self.i2c = I2C(0, scl=Pin(self.I2C_SCL), sda=Pin(self.I2C_SDA), freq=400000)
-        self.touch = GT911(self.i2c, rst=Pin(self.TOUCH_RST, Pin.OUT),
-                           int_pin=Pin(self.TOUCH_INT, Pin.IN))
+        # Initialize touch screen with error handling
+        try:
+            self.i2c = I2C(0, scl=Pin(self.I2C_SCL), sda=Pin(self.I2C_SDA), freq=400000)
+            self.touch = GT911(self.i2c, rst=Pin(self.TOUCH_RST, Pin.OUT),
+                               int_pin=Pin(self.TOUCH_INT, Pin.IN))
+            print("Touch screen initialized")
+        except Exception as e:
+            print(f"Touch screen initialization failed: {e}")
+            self.touch = None  # Set to None if initialization fails
         
         # Initialize buzzer
         self.buzzer = Pin(self.BUZZER_PIN, Pin.OUT)

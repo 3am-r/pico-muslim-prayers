@@ -130,7 +130,7 @@ class Joystick:
             if timeout_ms and time.ticks_diff(time.ticks_ms(), start_time) > timeout_ms:
                 return None
                 
-            time.sleep_ms(10)
+            time.sleep_ms(20)  # Increased sleep for better performance
             
     def wait_for_button(self, timeout_ms=None):
         """

@@ -74,7 +74,7 @@ class UIManager:
         self.draw_prayer_times_grid(prayer_times, next_prayer)
         
         # Navigation instructions (positioned above bottom navigation)
-        self.draw_text_centered("Left/Right: Tabs  Button1: Settings  Button2: Refresh", 
+        self.draw_text_centered("Left/Right: Tabs  Button1: Sleep  Button2: Refresh", 
                                self.height - 90, 1, GREY)
         
         # Bottom navigation
@@ -177,8 +177,8 @@ class UIManager:
         # Background for navigation
         self.display.fill_rect(0, nav_y, self.width, nav_height, 0x2104)  # Dark gray
         
-        # Tab width
-        tab_width = self.width // 3
+        # Tab width for 4 tabs
+        tab_width = self.width // 4
         
         # Prayer Times Tab
         prayer_active = current_tab == 'prayer'
@@ -188,9 +188,13 @@ class UIManager:
         hijri_active = current_tab == 'hijri'
         self.draw_nav_tab(tab_width, nav_y, tab_width, nav_height, "Events", hijri_active, "📅", 'hijri')
         
+        # Qibla Compass Tab
+        qibla_active = current_tab == 'qibla'
+        self.draw_nav_tab(tab_width * 2, nav_y, tab_width, nav_height, "Qibla", qibla_active, "🧭", 'qibla')
+        
         # Settings Tab
         settings_active = current_tab == 'settings'
-        self.draw_nav_tab(tab_width * 2, nav_y, tab_width, nav_height, "Settings", settings_active, "⚙️", 'settings')
+        self.draw_nav_tab(tab_width * 3, nav_y, tab_width, nav_height, "Settings", settings_active, "⚙️", 'settings')
     
     def draw_nav_tab(self, x, y, width, height, label, active, icon, tab_id):
         """Draw a single navigation tab"""
@@ -214,6 +218,10 @@ class UIManager:
             self.draw_text_centered_in_area("===", x, icon_y, width, 1, text_color)
             self.draw_text_centered_in_area("|1|", x, icon_y + 8, width, 1, text_color)
             self.draw_text_centered_in_area("---", x, icon_y + 16, width, 1, text_color)
+        elif icon == "🧭":  # Compass for Qibla
+            self.draw_text_centered_in_area(" N ", x, icon_y, width, 1, text_color)
+            self.draw_text_centered_in_area("W+E", x, icon_y + 8, width, 1, text_color)
+            self.draw_text_centered_in_area(" S ", x, icon_y + 16, width, 1, text_color)
         elif icon == "⚙️":  # Gear for Settings
             self.draw_text_centered_in_area("+-+", x, icon_y, width, 1, text_color)
             self.draw_text_centered_in_area("|O|", x, icon_y + 8, width, 1, text_color)
@@ -276,11 +284,195 @@ class UIManager:
         self.draw_text_centered(f"{hijri_year} AH", y_pos + 20, 2, self.primary_color)
         
         # Navigation instructions (positioned above bottom navigation)
-        self.draw_text_centered("Left/Right: Switch Tabs  Button1: Settings", 
+        self.draw_text_centered("Left/Right: Switch Tabs  Button1: Sleep", 
                                self.height - 90, 1, GREY)
         
         # Bottom navigation
         self.draw_bottom_navigation(current_tab)
+    
+    def draw_qibla_screen(self, qibla_direction, location_name, current_tab='qibla'):
+        """Draw Qibla compass screen"""
+        self.display.clear(self.bg_color)
+        self.touch_regions = []
+        
+        # Title
+        self.draw_text_centered("Qibla Direction", 20, 2, self.primary_color)
+        
+        # Location info
+        location_text = f"From: {location_name}"
+        self.draw_text_centered(location_text, 50, 1, self.secondary_color)
+        
+        # Draw beautiful compass circle
+        self.draw_compass_circle(qibla_direction)
+        
+        # Direction info
+        direction_text = f"Qibla: {qibla_direction:.1f}°"
+        self.draw_text_centered(direction_text, 350, 2, self.accent_color)
+        
+        # Cardinal direction
+        cardinal = self.get_cardinal_direction(qibla_direction)
+        self.draw_text_centered(f"({cardinal})", 375, 1, self.secondary_color)
+        
+        # Bottom navigation
+        self.draw_bottom_navigation(current_tab)
+    
+    def draw_compass_circle(self, qibla_direction):
+        """Draw a beautiful compass circle with Qibla direction"""
+        import math
+        
+        # Compass center and radius
+        center_x = self.width // 2
+        center_y = 200
+        radius = 80
+        
+        # Draw compass circle
+        self.draw_circle(center_x, center_y, radius, self.secondary_color)
+        self.draw_circle(center_x, center_y, radius - 2, self.secondary_color)
+        
+        # Draw cardinal direction markers
+        directions = [
+            (0, "N", self.primary_color),      # North
+            (90, "E", self.secondary_color),   # East  
+            (180, "S", self.secondary_color), # South
+            (270, "W", self.secondary_color)  # West
+        ]
+        
+        for angle, label, color in directions:
+            # Calculate position for direction label
+            rad = math.radians(angle - 90)  # -90 to make 0° point up (North)
+            label_x = center_x + int((radius + 15) * math.cos(rad))
+            label_y = center_y + int((radius + 15) * math.sin(rad))
+            
+            # Draw direction label
+            self.draw_text_centered_at_position(label, label_x, label_y, 2, color)
+            
+            # Draw direction tick marks
+            tick_inner_x = center_x + int((radius - 10) * math.cos(rad))
+            tick_inner_y = center_y + int((radius - 10) * math.sin(rad))
+            tick_outer_x = center_x + int(radius * math.cos(rad))
+            tick_outer_y = center_y + int(radius * math.sin(rad))
+            
+            self.draw_line(tick_inner_x, tick_inner_y, tick_outer_x, tick_outer_y, color)
+        
+        # Draw Qibla direction arrow
+        self.draw_qibla_arrow(center_x, center_y, radius - 20, qibla_direction)
+        
+        # Draw center dot
+        self.draw_circle(center_x, center_y, 3, self.accent_color, filled=True)
+        
+        # Draw \"Mecca\" label at Qibla direction
+        rad = math.radians(qibla_direction - 90)
+        mecca_x = center_x + int((radius + 25) * math.cos(rad))
+        mecca_y = center_y + int((radius + 25) * math.sin(rad))
+        self.draw_text_centered_at_position("Mecca", mecca_x, mecca_y, 1, RED)
+    
+    def draw_qibla_arrow(self, center_x, center_y, length, angle):
+        """Draw arrow pointing to Qibla direction"""
+        import math
+        
+        # Convert angle to radians (subtract 90 to make 0° point up)
+        rad = math.radians(angle - 90)
+        
+        # Arrow endpoint
+        end_x = center_x + int(length * math.cos(rad))
+        end_y = center_y + int(length * math.sin(rad))
+        
+        # Draw main arrow line
+        self.draw_line(center_x, center_y, end_x, end_y, self.accent_color)
+        
+        # Draw arrow head
+        arrow_size = 8
+        arrow_angle = math.radians(30)
+        
+        # Left arrow head line
+        left_x = end_x - int(arrow_size * math.cos(rad - arrow_angle))
+        left_y = end_y - int(arrow_size * math.sin(rad - arrow_angle))
+        self.draw_line(end_x, end_y, left_x, left_y, self.accent_color)
+        
+        # Right arrow head line
+        right_x = end_x - int(arrow_size * math.cos(rad + arrow_angle))
+        right_y = end_y - int(arrow_size * math.sin(rad + arrow_angle))
+        self.draw_line(end_x, end_y, right_x, right_y, self.accent_color)
+    
+    def get_cardinal_direction(self, angle):
+        """Convert angle to cardinal/intercardinal direction"""
+        directions = [
+            "N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
+            "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"
+        ]
+        index = int((angle + 11.25) // 22.5) % 16
+        return directions[index]
+    
+    def draw_circle(self, x, y, radius, color, filled=False):
+        """Draw a circle using line segments"""
+        import math
+        
+        if filled:
+            # Draw filled circle with concentric circles
+            for r in range(radius):
+                self.draw_circle_outline(x, y, r, color)
+        else:
+            self.draw_circle_outline(x, y, radius, color)
+    
+    def draw_circle_outline(self, x, y, radius, color):
+        """Draw circle outline using line segments"""
+        import math
+        
+        # Use more points for smoother circle
+        points = 36
+        for i in range(points):
+            angle1 = 2 * math.pi * i / points
+            angle2 = 2 * math.pi * (i + 1) / points
+            
+            x1 = x + int(radius * math.cos(angle1))
+            y1 = y + int(radius * math.sin(angle1))
+            x2 = x + int(radius * math.cos(angle2))
+            y2 = y + int(radius * math.sin(angle2))
+            
+            self.draw_line(x1, y1, x2, y2, color)
+    
+    def draw_line(self, x1, y1, x2, y2, color):
+        """Draw a line between two points"""
+        # Simple line drawing using Bresenham's algorithm
+        dx = abs(x2 - x1)
+        dy = abs(y2 - y1)
+        
+        if dx > dy:
+            # More horizontal than vertical
+            if x1 > x2:
+                x1, y1, x2, y2 = x2, y2, x1, y1
+            
+            steps = dx
+            x_inc = 1
+            y_inc = (y2 - y1) / dx if dx != 0 else 0
+            
+            for i in range(steps + 1):
+                x = x1 + i * x_inc
+                y = int(y1 + i * y_inc)
+                if 0 <= x < self.width and 0 <= y < self.height:
+                    self.display.pixel(x, y, color)
+        else:
+            # More vertical than horizontal
+            if y1 > y2:
+                x1, y1, x2, y2 = x2, y2, x1, y1
+            
+            steps = dy
+            y_inc = 1
+            x_inc = (x2 - x1) / dy if dy != 0 else 0
+            
+            for i in range(steps + 1):
+                x = int(x1 + i * x_inc)
+                y = y1 + i * y_inc
+                if 0 <= x < self.width and 0 <= y < self.height:
+                    self.display.pixel(x, y, color)
+    
+    def draw_text_centered_at_position(self, text, x, y, size, color):
+        """Draw text centered at a specific position"""
+        text_width = len(text) * 6 * size
+        text_height = 8 * size
+        text_x = x - text_width // 2
+        text_y = y - text_height // 2
+        self.font.draw_text(self.display, text, text_x, text_y, size, color)
         
     def show_settings_screen(self, config):
         """Display settings screen with city selection"""

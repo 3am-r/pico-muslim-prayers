@@ -5,13 +5,16 @@ Based on astronomical calculations
 
 import math
 from machine import RTC
+from lib.dst_utils import get_current_timezone_offset
 
 class PrayerTimes:
-    def __init__(self, latitude, longitude, timezone, calculation_method='ISNA'):
+    def __init__(self, latitude, longitude, timezone, calculation_method='ISNA', config=None):
         self.latitude = latitude
         self.longitude = longitude
+        self.base_timezone = timezone  # Store base timezone
         self.timezone = timezone
         self.calculation_method = calculation_method
+        self.config = config
         
         # Method parameters
         self.methods = {
@@ -205,8 +208,14 @@ class PrayerTimes:
         """Calculate prayer times for current day"""
         year, month, day, _, hour, minute, second, _ = self.rtc.datetime()
         
+        # Update timezone based on DST settings if config is available
+        if self.config:
+            daylight_saving_enabled = self.config.get('daylight_saving', True)
+            self.timezone = get_current_timezone_offset(self.base_timezone, daylight_saving_enabled)
+        
         if day != self.last_update_day:
             print(f"Calculating prayer times for {year}-{month:02d}-{day:02d}")
+            print(f"Using timezone: UTC{self.timezone:+d}")
             self.prayer_times_cache = self.calculate_times(year, month, day)
             self.last_update_day = day
         
