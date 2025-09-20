@@ -6,8 +6,8 @@ This is a simple way to configure WiFi without needing a complex input interface
 """
 
 # WiFi Network Credentials
-WIFI_SSID = "BFamily"
-WIFI_PASSWORD = "er0dMonzen"
+WIFI_SSID = "77"
+WIFI_PASSWORD = "77"
 
 # Optional: Set these in your config.json or configure via settings
 def configure_wifi(config):
